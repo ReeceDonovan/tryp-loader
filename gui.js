@@ -86,6 +86,11 @@ async function run() {
           ],
           initialValue: '',
         }),
+      country: () =>
+        p.text({
+          message: 'Only show trips to specific countries? (comma-separated, blank = no filter)',
+          initialValue: '',
+        }),
       save: () =>
         p.confirm({ message: 'Save full results to results.json?', initialValue: true }),
       open: () =>
@@ -116,6 +121,9 @@ async function run() {
   ];
   if (answers.month) {
     argv.push(`--month=${answers.month}`);
+  }
+  if (answers.country && answers.country.trim()) {
+    argv.push(`--country=${answers.country.trim()}`);
   }
   if (!answers.save) {
     argv.push('--no-save');

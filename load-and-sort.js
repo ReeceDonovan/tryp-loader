@@ -44,7 +44,7 @@ for (const { abbr, name } of MONTHS) {
 
 const KNOWN_OPTION_KEYS = new Set([
   'runs', 'concurrency', 'location', 'adults', 'children', 'infants',
-  'budget', 'accommodation', 'avoid', 'top', 'minDays', 'month',
+  'budget', 'accommodation', 'avoid', 'top', 'minDays', 'month', 'country',
 ]);
 
 function printHelp() {
@@ -87,6 +87,12 @@ Options:
                         Shorter/other-month trips are skipped over (but
                         still included in results.json).
                         (default: no filter)
+  --country=LIST        Comma-separated destination countries to count
+                        towards --top, e.g. Spain,Poland. Case-insensitive.
+                        Matches if a trip visits any listed country.
+                        Other-country trips are skipped over (but still
+                        included in results.json).
+                        (default: no filter)
   --no-save             Don't write the full results to results.json —
                         only print the top trips to the console.
   --no-open             Don't generate results.html or open it in your
@@ -99,6 +105,7 @@ Examples:
   node load-and-sort.js --location=DEBER --adults=2
   node load-and-sort.js --top=10 --min-days=5
   node load-and-sort.js --month=september --top=10
+  node load-and-sort.js --country=spain,poland --top=10
   node load-and-sort.js --accommodation=apartment --budget=budget,luxury --children=2 --avoid=GB-ENG,US
   node load-and-sort.js --no-open
 `);
@@ -118,6 +125,7 @@ function parseArgs(argv) {
     accommodation: 'hotel',
     avoid: ['GB-ENG'],
     month: null,
+    country: null,
     save: true,
     open: true,
   };
@@ -163,6 +171,9 @@ function parseArgs(argv) {
         break;
       case 'month':
         opts.month = value.trim().toLowerCase();
+        break;
+      case 'country':
+        opts.country = value.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
         break;
     }
   }
@@ -214,6 +225,9 @@ function parseArgs(argv) {
     }
     opts.month = normalized;
   }
+  if (opts.country !== null && opts.country.length === 0) {
+    throw new Error(`Invalid --country "" — expected a comma-separated list of country names, e.g. Spain,Poland.`);
+  }
 
   return opts;
 }
@@ -264,6 +278,14 @@ function parsePrice(str) {
   const cleaned = str.replace(/[^\d,.-]/g, '').replace(/,/g, '');
   const value = parseFloat(cleaned);
   return Number.isNaN(value) ? null : value;
+}
+
+// title is "<N> day(s) - <Country>" (comma-separated for multi-leg trips,
+// e.g. "Italy, Poland") -- strip the leading day count and split the rest.
+function extractCountries(title) {
+  const m = title ? title.match(/^\d+\s+days?\s*-\s*(.+)$/i) : null;
+  if (!m) return [];
+  return m[1].split(',').map((s) => s.trim()).filter(Boolean);
 }
 
 async function extractTrips(page) {
@@ -426,6 +448,8 @@ function aggregateAndDedup(outcomes, searchUrl) {
       const monthMatch = t.dates ? t.dates.match(/^[A-Za-z]{3}, \d{1,2} ([A-Za-z]{3})/) : null;
       const departureMonth = monthMatch ? monthMatch[1] : null;
 
+      const countries = extractCountries(t.title);
+
       trips.push({
         ...t,
         price,
@@ -434,6 +458,7 @@ function aggregateAndDedup(outcomes, searchUrl) {
         sourceRun: outcome.runIndex,
         days,
         departureMonth,
+        countries,
       });
     }
   }
@@ -475,7 +500,7 @@ async function main(argv) {
     return;
   }
 
-  const { runs, concurrency, location, adults, children, infants, top, minDays, budget, accommodation, avoid, month, save, open } = parseArgs(argv);
+  const { runs, concurrency, location, adults, children, infants, top, minDays, budget, accommodation, avoid, month, country, save, open } = parseArgs(argv);
   const searchUrl = buildSearchUrl({ location, adults, children, infants, budget, accommodation, avoid });
   console.log(
     `Running ${runs} search${runs === 1 ? '' : 'es'} (concurrency ${concurrency}, location=${location}, adults=${adults}, children=${children}, infants=${infants}, budget=${budget.join(',')}, accommodation=${accommodation}, avoid=${avoid.join(',')})...\n`
@@ -504,7 +529,10 @@ async function main(argv) {
   }
 
   const eligibleTrips = trips.filter(
-    (t) => (t.days ?? 0) >= minDays && (!month || t.departureMonth === month)
+    (t) =>
+      (t.days ?? 0) >= minDays &&
+      (!month || t.departureMonth === month) &&
+      (!country || (t.countries || []).some((c) => country.includes(c.toLowerCase())))
   );
 
   console.log(`\nRuns: ${outcomes.length} (${succeeded} succeeded, ${failed} failed)`);
@@ -512,6 +540,7 @@ async function main(argv) {
   const filterDescriptions = [];
   if (minDays > 0) filterDescriptions.push(`of at least ${minDays} day(s)`);
   if (month) filterDescriptions.push(`departing in ${month}`);
+  if (country) filterDescriptions.push(`in ${country.join(' or ')}`);
   if (filterDescriptions.length > 0) {
     console.log(`Trips ${filterDescriptions.join(' and ')}: ${eligibleTrips.length} of ${trips.length}`);
   }

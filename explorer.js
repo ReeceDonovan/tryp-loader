@@ -333,7 +333,7 @@ const CLIENT_JS = `
   };
 
   var state = {
-    search: '', month: '', minDays: 0, maxPrice: null,
+    search: '', month: '', country: '', minDays: 0, maxPrice: null,
     breakfastOnly: false, bestsellerOnly: false,
     sortKey: 'price', sortDir: 'asc'
   };
@@ -341,6 +341,7 @@ const CLIENT_JS = `
   var els = {
     search: document.getElementById('search'),
     month: document.getElementById('month'),
+    country: document.getElementById('country'),
     minDays: document.getElementById('minDays'),
     maxPrice: document.getElementById('maxPrice'),
     breakfastOnly: document.getElementById('breakfastOnly'),
@@ -378,13 +379,6 @@ const CLIENT_JS = `
     return n == null ? '\\u2014' : '\\u20AC' + n.toLocaleString('en-IE');
   }
 
-  // title is "<N> day(s) - <Country>"; strip the leading day count to get
-  // just the country, since days already has its own column.
-  function extractCountry(title) {
-    var m = title ? title.match(/^\\d+\\s+days?\\s*-\\s*(.+)$/i) : null;
-    return m ? m[1].trim() : null;
-  }
-
   // "dates" has no year (e.g. "Wed, 23 Sep - Sat, 26 Sep"), so this is only an
   // approximate chronological key -- month order plus the first day-of-month
   // digits found -- not a real Date. Good enough for one scrape snapshot.
@@ -414,6 +408,19 @@ const CLIENT_JS = `
     });
   }
 
+  function populateCountryOptions() {
+    var present = {};
+    TRIPS.forEach(function (t) {
+      (t.countries || []).forEach(function (c) { present[c] = true; });
+    });
+    Object.keys(present).sort().forEach(function (c) {
+      var opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      els.country.appendChild(opt);
+    });
+  }
+
   function applyFilters() {
     var term = state.search.trim().toLowerCase();
     return TRIPS.filter(function (t) {
@@ -422,6 +429,7 @@ const CLIENT_JS = `
         if (haystack.indexOf(term) === -1) return false;
       }
       if (state.month && t.departureMonth !== state.month) return false;
+      if (state.country && (t.countries || []).indexOf(state.country) === -1) return false;
       if (state.minDays > 0 && (t.days == null ? 0 : t.days) < state.minDays) return false;
       if (state.maxPrice != null && (t.price == null ? Infinity : t.price) > state.maxPrice) return false;
       if (state.breakfastOnly && !t.breakfastIncluded) return false;
@@ -453,7 +461,7 @@ const CLIENT_JS = `
       (t.bestseller ? '<span class="badge badge-bestseller">Bestseller</span>' : '') +
       (t.breakfastIncluded ? '<span class="badge badge-breakfast">Breakfast</span>' : '');
 
-    var country = extractCountry(t.title);
+    var country = (t.countries && t.countries.length) ? t.countries.join(', ') : null;
 
     return (
       '<tr>' +
@@ -501,6 +509,7 @@ const CLIENT_JS = `
 
   els.search.addEventListener('input', function () { state.search = els.search.value; render(); });
   els.month.addEventListener('change', function () { state.month = els.month.value; render(); });
+  els.country.addEventListener('change', function () { state.country = els.country.value; render(); });
   els.minDays.addEventListener('input', function () {
     var n = parseInt(els.minDays.value, 10);
     state.minDays = isNaN(n) || n < 0 ? 0 : n;
@@ -515,9 +524,9 @@ const CLIENT_JS = `
   els.bestsellerOnly.addEventListener('change', function () { state.bestsellerOnly = els.bestsellerOnly.checked; render(); });
 
   els.reset.addEventListener('click', function () {
-    state.search = ''; state.month = ''; state.minDays = 0; state.maxPrice = null;
+    state.search = ''; state.month = ''; state.country = ''; state.minDays = 0; state.maxPrice = null;
     state.breakfastOnly = false; state.bestsellerOnly = false;
-    els.search.value = ''; els.month.value = ''; els.minDays.value = ''; els.maxPrice.value = '';
+    els.search.value = ''; els.month.value = ''; els.country.value = ''; els.minDays.value = ''; els.maxPrice.value = '';
     els.breakfastOnly.checked = false; els.bestsellerOnly.checked = false;
     render();
   });
@@ -538,6 +547,7 @@ const CLIENT_JS = `
   els.heroCountValue.textContent = String(TRIPS.length);
   els.totalCount.textContent = String(TRIPS.length);
   populateMonthOptions();
+  populateCountryOptions();
   render();
 })();
 `;
@@ -572,6 +582,10 @@ function buildExplorerHtml(trips) {
       <div class="field">
         <label for="month">Month</label>
         <select id="month"><option value="">All months</option></select>
+      </div>
+      <div class="field">
+        <label for="country">Country</label>
+        <select id="country"><option value="">All countries</option></select>
       </div>
       <div class="field">
         <label for="minDays">Min days</label>
