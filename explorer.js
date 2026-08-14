@@ -259,6 +259,8 @@ tbody tr:last-child td { border-bottom: none; }
   margin-top: 2px;
 }
 
+.discount-cell { white-space: nowrap; }
+
 .days-cell {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   white-space: nowrap;
@@ -380,6 +382,11 @@ const CLIENT_JS = `
     return n == null ? '\\u2014' : '\\u20AC' + n.toLocaleString('en-IE');
   }
 
+  function formatDiscount(t) {
+    var pct = discountPercent(t);
+    return pct > 0 ? '-' + pct + '%' : '\\u2014';
+  }
+
   // "dates" has no year (e.g. "Wed, 23 Sep - Sat, 26 Sep"), so this is only an
   // approximate chronological key -- month order plus the first day-of-month
   // digits found -- not a real Date. Good enough for one scrape snapshot.
@@ -390,11 +397,32 @@ const CLIENT_JS = `
     return monthIdx * 100 + day;
   }
 
+  // originalPrice is null whenever the listing advertised no "was" price, and
+  // a price >= originalPrice (bad scrape, or a promo that briefly went the
+  // other way) is clamped to 0 rather than a negative discount -- neither
+  // case should ever outrank a genuinely-discounted trip in a "largest
+  // discount" sort.
+  function discountPercent(t) {
+    if (t.originalPrice == null || t.price == null || t.originalPrice <= 0) return 0;
+    var pct = (t.originalPrice - t.price) / t.originalPrice * 100;
+    if (pct <= 0) return 0;
+    return Math.round(pct);
+  }
+
   var SORT_ACCESSORS = {
     price: function (t) { return t.price == null ? Infinity : t.price; },
+    discount: discountPercent,
     days: function (t) { return t.days == null ? Infinity : t.days; },
     destination: function (t) { return (t.destination || '').toLowerCase(); },
     dates: dateSortKey
+  };
+
+  // Which direction a column should start in on its *first* click after
+  // switching to it. Every existing column defaults to ascending (unchanged
+  // behavior); discount is the exception, since "sort by discount" only
+  // makes sense read as "biggest discount first."
+  var DEFAULT_SORT_DIR = {
+    discount: 'desc'
   };
 
   function populateMonthOptions() {
@@ -474,6 +502,7 @@ const CLIENT_JS = `
       '<td class="price-cell"><span class="price">' + escapeHtml(formatPrice(t.price)) + '</span>' +
       (t.originalPrice != null ? '<span class="price-was">' + escapeHtml(formatPrice(t.originalPrice)) + '</span>' : '') +
       '</td>' +
+      '<td class="discount-cell">' + escapeHtml(formatDiscount(t)) + '</td>' +
       '<td class="days-cell">' + (t.days != null ? escapeHtml(t.days) : '\\u2014') + '</td>' +
       '<td class="destination-cell">' + escapeHtml(t.destination || '\\u2014') +
       (country ? '<span class="country">' + escapeHtml(country) + '</span>' : '') +
@@ -491,7 +520,7 @@ const CLIENT_JS = `
 
     els.tbody.innerHTML = sorted.length
       ? sorted.map(rowHtml).join('')
-      : '<tr class="empty-row"><td colspan="6">' +
+      : '<tr class="empty-row"><td colspan="7">' +
         (TRIPS.length === 0
           ? 'No trips were found in this scrape.'
           : 'No trips match these filters \\u2014 try Reset filters.') +
@@ -549,7 +578,7 @@ const CLIENT_JS = `
         state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
       } else {
         state.sortKey = key;
-        state.sortDir = 'asc';
+        state.sortDir = DEFAULT_SORT_DIR[key] || 'asc';
       }
       render();
     });
@@ -628,6 +657,7 @@ function buildExplorerHtml(trips) {
         <thead>
           <tr>
             <th scope="col" aria-sort="ascending"><button type="button" class="th-sort" data-sort-key="price">Price<span class="sort-arrow" aria-hidden="true"></span></button></th>
+            <th scope="col" aria-sort="none"><button type="button" class="th-sort" data-sort-key="discount">Discount<span class="sort-arrow" aria-hidden="true"></span></button></th>
             <th scope="col" aria-sort="none"><button type="button" class="th-sort" data-sort-key="days">Days<span class="sort-arrow" aria-hidden="true"></span></button></th>
             <th scope="col" aria-sort="none"><button type="button" class="th-sort" data-sort-key="destination">Destination<span class="sort-arrow" aria-hidden="true"></span></button></th>
             <th scope="col" aria-sort="none"><button type="button" class="th-sort" data-sort-key="dates">Dates<span class="sort-arrow" aria-hidden="true"></span></button></th>
