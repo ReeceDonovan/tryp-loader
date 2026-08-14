@@ -88,6 +88,8 @@ async function run() {
         }),
       save: () =>
         p.confirm({ message: 'Save full results to results.json?', initialValue: true }),
+      open: () =>
+        p.confirm({ message: 'Open results explorer in your browser when done?', initialValue: true }),
     },
     {
       onCancel: () => {
@@ -117,6 +119,9 @@ async function run() {
   }
   if (!answers.save) {
     argv.push('--no-save');
+  }
+  if (!answers.open) {
+    argv.push('--no-open');
   }
 
   try {

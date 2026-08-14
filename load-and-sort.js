@@ -1,5 +1,6 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
+const { writeAndOpenExplorer } = require('./explorer');
 
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
@@ -88,6 +89,8 @@ Options:
                         (default: no filter)
   --no-save             Don't write the full results to results.json —
                         only print the top trips to the console.
+  --no-open             Don't generate results.html or open it in your
+                        browser after the run finishes.
   --help, -h            Show this help message and exit.
 
 Examples:
@@ -97,6 +100,7 @@ Examples:
   node load-and-sort.js --top=10 --min-days=5
   node load-and-sort.js --month=september --top=10
   node load-and-sort.js --accommodation=apartment --budget=budget,luxury --children=2 --avoid=GB-ENG,US
+  node load-and-sort.js --no-open
 `);
 }
 
@@ -115,10 +119,15 @@ function parseArgs(argv) {
     avoid: ['GB-ENG'],
     month: null,
     save: true,
+    open: true,
   };
   for (const arg of argv) {
     if (arg === '--no-save') {
       opts.save = false;
+      continue;
+    }
+    if (arg === '--no-open') {
+      opts.open = false;
       continue;
     }
     const m = arg.match(/^--([a-zA-Z-]+)=(.+)$/);
@@ -456,7 +465,7 @@ async function main(argv) {
     return;
   }
 
-  const { runs, concurrency, location, adults, children, infants, top, minDays, budget, accommodation, avoid, month, save } = parseArgs(argv);
+  const { runs, concurrency, location, adults, children, infants, top, minDays, budget, accommodation, avoid, month, save, open } = parseArgs(argv);
   const searchUrl = buildSearchUrl({ location, adults, children, infants, budget, accommodation, avoid });
   console.log(
     `Running ${runs} search${runs === 1 ? '' : 'es'} (concurrency ${concurrency}, location=${location}, adults=${adults}, children=${children}, infants=${infants}, budget=${budget.join(',')}, accommodation=${accommodation}, avoid=${avoid.join(',')})...\n`
@@ -480,6 +489,10 @@ async function main(argv) {
     fs.writeFileSync('results.json', JSON.stringify(trips, null, 2));
   }
 
+  if (save && open) {
+    writeAndOpenExplorer(trips);
+  }
+
   const eligibleTrips = trips.filter(
     (t) => (t.days ?? 0) >= minDays && (!month || t.departureMonth === month)
   );
@@ -498,11 +511,13 @@ async function main(argv) {
     console.log(line);
   }
 
-  console.log(
-    save
-      ? `\nFull data (${trips.length} trips) written to results.json`
-      : `\nFull data (${trips.length} trips) not saved (--no-save).`
-  );
+  if (!save) {
+    console.log(`\nFull data (${trips.length} trips) not saved (--no-save).`);
+  } else if (open) {
+    console.log(`\nFull data (${trips.length} trips) written to results.json — opening results.html in your browser...`);
+  } else {
+    console.log(`\nFull data (${trips.length} trips) written to results.json (explorer not opened — --no-open).`);
+  }
 }
 
 if (require.main === module) {

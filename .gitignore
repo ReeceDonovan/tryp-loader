@@ -1,4 +1,5 @@
 node_modules/
 results.json
 results_backup.json
+results.html
 .DS_Store
