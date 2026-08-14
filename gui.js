@@ -145,12 +145,8 @@ async function run() {
         }),
       avoid: () =>
         p.text({
-          message: 'Location codes to avoid (comma-separated)',
+          message: 'Location codes to avoid (comma-separated, blank = no filter)',
           initialValue: 'GB-ENG',
-          validate: (value) => {
-            const codes = value.split(',').map((s) => s.trim()).filter(Boolean);
-            if (codes.length === 0) return 'Enter at least one location code, e.g. GB-ENG,US.';
-          },
         }),
       runs: () =>
         p.text({ message: 'Number of independent search sessions to run', initialValue: '5', validate: intValidator({ min: 1 }) }),

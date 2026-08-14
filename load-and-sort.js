@@ -74,7 +74,7 @@ Options:
                         apartment. Case-insensitive.
                         (default: hotel)
   --avoid=LIST          Comma-separated location codes to avoid, e.g.
-                        GB-ENG,US.
+                        GB-ENG,US. Blank = no filter.
                         (default: GB-ENG)
   --top=N               Number of cheapest trips to print to the console.
                         (default: 50)
@@ -138,7 +138,7 @@ function parseArgs(argv) {
       opts.open = false;
       continue;
     }
-    const m = arg.match(/^--([a-zA-Z-]+)=(.+)$/);
+    const m = arg.match(/^--([a-zA-Z-]+)=(.*)$/);
     if (!m) {
       throw new Error(`Unrecognized argument "${arg}" — expected the form --flag=value. Run with --help for usage.`);
     }
@@ -215,9 +215,6 @@ function parseArgs(argv) {
       `Invalid --accommodation "${opts.accommodation}" — expected one of: ${Object.keys(ACCOMMODATION_TYPE_TO_VALUE).join(', ')}.`
     );
   }
-  if (opts.avoid.length === 0) {
-    throw new Error(`Invalid --avoid "${opts.avoid.join(',')}" — expected a comma-separated list of location codes, e.g. GB-ENG,US.`);
-  }
   if (opts.month !== null) {
     const normalized = MONTH_NAME_TO_ABBR[opts.month];
     if (!normalized) {
@@ -239,7 +236,7 @@ function buildSearchUrl({ location, adults, children, infants, budget, accommoda
     initialLocation: location,
     ...(accommodationType ? { accommodationType } : {}),
     budget: budget.map((b) => BUDGET_LABEL_TO_VALUE[b]).join(','),
-    avoidLocations: avoid.join(','),
+    ...(avoid.length > 0 ? { avoidLocations: avoid.join(',') } : {}),
     n_adults: String(adults),
     ...(children > 0 ? { n_children: String(children) } : {}),
     ...(infants > 0 ? { n_babies: String(infants) } : {}),
