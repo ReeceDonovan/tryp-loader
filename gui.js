@@ -98,8 +98,8 @@ async function pickDepartureLocation(p) {
     const choice = await p.select({
       message: 'Select your departure city',
       options: [
-        { value: SEARCH_AGAIN, label: '↩ Search again' },
         ...matches.map((m) => ({ value: m.locode, label: formatCityLabel(m) })),
+        { value: SEARCH_AGAIN, label: '↩ Search again' },
       ],
     });
     if (p.isCancel(choice)) return choice;
