@@ -76,6 +76,8 @@ async function run() {
         p.text({ message: 'Number of cheapest trips to print', initialValue: '50', validate: intValidator({ min: 1 }) }),
       minDays: () =>
         p.text({ message: 'Minimum trip length in days (0 = no minimum)', initialValue: '0', validate: intValidator({ min: 0 }) }),
+      save: () =>
+        p.confirm({ message: 'Save full results to results.json?', initialValue: true }),
     },
     {
       onCancel: () => {
@@ -100,6 +102,9 @@ async function run() {
     `--top=${answers.top}`,
     `--min-days=${answers.minDays}`,
   ];
+  if (!answers.save) {
+    argv.push('--no-save');
+  }
 
   try {
     await main(argv);

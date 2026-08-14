@@ -60,6 +60,8 @@ Options:
                         towards --top. Shorter trips are skipped over (but
                         still included in results.json).
                         (default: 0, no minimum)
+  --no-save             Don't write the full results to results.json —
+                        only print the top trips to the console.
   --help, -h            Show this help message and exit.
 
 Examples:
@@ -84,8 +86,13 @@ function parseArgs(argv) {
     budget: ['comfort'],
     accommodation: 'hotel',
     avoid: ['GB-ENG'],
+    save: true,
   };
   for (const arg of argv) {
+    if (arg === '--no-save') {
+      opts.save = false;
+      continue;
+    }
     const m = arg.match(/^--([a-zA-Z-]+)=(.+)$/);
     if (!m) {
       throw new Error(`Unrecognized argument "${arg}" — expected the form --flag=value. Run with --help for usage.`);
@@ -403,7 +410,7 @@ async function main(argv) {
     return;
   }
 
-  const { runs, concurrency, location, adults, children, infants, top, minDays, budget, accommodation, avoid } = parseArgs(argv);
+  const { runs, concurrency, location, adults, children, infants, top, minDays, budget, accommodation, avoid, save } = parseArgs(argv);
   const searchUrl = buildSearchUrl({ location, adults, children, infants, budget, accommodation, avoid });
   console.log(
     `Running ${runs} search${runs === 1 ? '' : 'es'} (concurrency ${concurrency}, location=${location}, adults=${adults}, children=${children}, infants=${infants}, budget=${budget.join(',')}, accommodation=${accommodation}, avoid=${avoid.join(',')})...\n`
@@ -423,7 +430,9 @@ async function main(argv) {
 
   const trips = aggregateAndDedup(outcomes, searchUrl);
 
-  fs.writeFileSync('results.json', JSON.stringify(trips, null, 2));
+  if (save) {
+    fs.writeFileSync('results.json', JSON.stringify(trips, null, 2));
+  }
 
   const eligibleTrips = trips.filter((t) => (t.days ?? 0) >= minDays);
 
@@ -438,7 +447,11 @@ async function main(argv) {
     console.log(line);
   }
 
-  console.log(`\nFull data (${trips.length} trips) written to results.json`);
+  console.log(
+    save
+      ? `\nFull data (${trips.length} trips) written to results.json`
+      : `\nFull data (${trips.length} trips) not saved (--no-save).`
+  );
 }
 
 if (require.main === module) {
