@@ -12,11 +12,13 @@ const {
 const LOCATION_SEARCH_URL = 'https://rduu3i7qp8.execute-api.eu-central-1.amazonaws.com/prod/typeahead/v1/search';
 const LOCATION_SEARCH_API_KEY = 'xeVlvwPT5C7Z7oq3zEYOJ4yOr9QJpLvC1ofD9d0K';
 
-function intValidator({ min }) {
+function intValidator({ min, max }) {
   return (value) => {
     const n = Number(value);
-    if (!Number.isInteger(n) || n < min) {
-      return `Must be a whole number >= ${min}.`;
+    if (!Number.isInteger(n) || n < min || (max !== undefined && n > max)) {
+      return max !== undefined
+        ? `Must be a whole number between ${min} and ${max}.`
+        : `Must be a whole number >= ${min}.`;
     }
   };
 }
@@ -156,6 +158,8 @@ async function run() {
         p.text({ message: 'Number of cheapest trips to print', initialValue: '50', validate: intValidator({ min: 1 }) }),
       minDays: () =>
         p.text({ message: 'Minimum trip length in days (0 = no minimum)', initialValue: '0', validate: intValidator({ min: 0 }) }),
+      minRating: () =>
+        p.text({ message: 'Minimum accommodation rating in stars, 1-5 (0 = no minimum)', initialValue: '0', validate: intValidator({ min: 0, max: 5 }) }),
       month: () =>
         p.select({
           message: 'Only show trips departing in a specific month?',
@@ -197,6 +201,7 @@ async function run() {
     `--concurrency=${answers.concurrency}`,
     `--top=${answers.top}`,
     `--min-days=${answers.minDays}`,
+    `--min-rating=${answers.minRating}`,
   ];
   if (answers.month) {
     argv.push(`--month=${answers.month}`);

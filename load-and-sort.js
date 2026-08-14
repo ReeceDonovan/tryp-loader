@@ -45,7 +45,11 @@ for (const { abbr, name } of MONTHS) {
 const KNOWN_OPTION_KEYS = new Set([
   'runs', 'concurrency', 'location', 'adults', 'children', 'infants',
   'budget', 'accommodation', 'avoid', 'top', 'minDays', 'month', 'country',
+  'minRating',
 ]);
+
+// Maps hyphenated CLI flag names that don't collapse to camelCase automatically.
+const RAW_KEY_ALIASES = { 'min-days': 'minDays', 'min-rating': 'minRating' };
 
 function printHelp() {
   console.log(`Usage: node load-and-sort.js [options]
@@ -82,6 +86,12 @@ Options:
                         towards --top. Shorter trips are skipped over (but
                         still included in results.json).
                         (default: 0, no minimum)
+  --min-rating=N        Minimum accommodation rating (in stars, 1-5) for a
+                        trip's accommodation to count towards --top. All
+                        legs of a multi-city trip must meet this minimum.
+                        Lower-rated trips are skipped over (but still
+                        included in results.json).
+                        (default: 0, no minimum; max: 5)
   --month=NAME          Only count trips departing in this month towards
                         --top, e.g. September or Sep. Case-insensitive.
                         Shorter/other-month trips are skipped over (but
@@ -106,6 +116,7 @@ Examples:
   node load-and-sort.js --top=10 --min-days=5
   node load-and-sort.js --month=september --top=10
   node load-and-sort.js --country=spain,poland --top=10
+  node load-and-sort.js --min-rating=3 --top=10
   node load-and-sort.js --accommodation=apartment --budget=budget,luxury --children=2 --avoid=GB-ENG,US
   node load-and-sort.js --no-open
 `);
@@ -121,6 +132,7 @@ function parseArgs(argv) {
     infants: 0,
     top: 50,
     minDays: 0,
+    minRating: 0,
     budget: ['comfort'],
     accommodation: 'hotel',
     avoid: ['GB-ENG'],
@@ -143,7 +155,7 @@ function parseArgs(argv) {
       throw new Error(`Unrecognized argument "${arg}" — expected the form --flag=value. Run with --help for usage.`);
     }
     const [, rawKey, value] = m;
-    const key = rawKey === 'min-days' ? 'minDays' : rawKey;
+    const key = RAW_KEY_ALIASES[rawKey] || rawKey;
     if (!KNOWN_OPTION_KEYS.has(key)) {
       throw new Error(`Unknown option "--${rawKey}" — run with --help to see available options.`);
     }
@@ -155,6 +167,7 @@ function parseArgs(argv) {
       case 'infants':
       case 'top':
       case 'minDays':
+      case 'minRating':
         opts[key] = parseInt(value, 10);
         break;
       case 'location':
@@ -201,6 +214,9 @@ function parseArgs(argv) {
   }
   if (!Number.isInteger(opts.minDays) || opts.minDays < 0) {
     throw new Error(`Invalid --min-days "${opts.minDays}" — expected a non-negative integer.`);
+  }
+  if (!Number.isInteger(opts.minRating) || opts.minRating < 0 || opts.minRating > 5) {
+    throw new Error(`Invalid --min-rating "${opts.minRating}" — expected an integer from 0 to 5.`);
   }
   if (
     opts.budget.length === 0 ||
@@ -283,6 +299,15 @@ function extractCountries(title) {
   const m = title ? title.match(/^\d+\s+days?\s*-\s*(.+)$/i) : null;
   if (!m) return [];
   return m[1].split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+// destinationLine is "<Place> ★★★" (multi-leg trips already joined by " → "
+// inside extractTrips' $$eval, e.g. "Bodrum ★★★ → Istanbul ★★★★") -- count
+// the ★ glyphs per leg. Ratings are on a 1-5 scale (see the note above
+// extractTrips); a leg with no parseable stars contributes 0.
+function extractRatings(destinationLine) {
+  if (!destinationLine) return [];
+  return destinationLine.split('→').map((leg) => (leg.match(/★/g) || []).length);
 }
 
 async function extractTrips(page) {
@@ -446,6 +471,7 @@ function aggregateAndDedup(outcomes, searchUrl) {
       const departureMonth = monthMatch ? monthMatch[1] : null;
 
       const countries = extractCountries(t.title);
+      const ratings = extractRatings(t.destination);
 
       trips.push({
         ...t,
@@ -456,6 +482,7 @@ function aggregateAndDedup(outcomes, searchUrl) {
         days,
         departureMonth,
         countries,
+        ratings,
       });
     }
   }
@@ -497,7 +524,7 @@ async function main(argv) {
     return;
   }
 
-  const { runs, concurrency, location, adults, children, infants, top, minDays, budget, accommodation, avoid, month, country, save, open } = parseArgs(argv);
+  const { runs, concurrency, location, adults, children, infants, top, minDays, minRating, budget, accommodation, avoid, month, country, save, open } = parseArgs(argv);
   const searchUrl = buildSearchUrl({ location, adults, children, infants, budget, accommodation, avoid });
   console.log(
     `Running ${runs} search${runs === 1 ? '' : 'es'} (concurrency ${concurrency}, location=${location}, adults=${adults}, children=${children}, infants=${infants}, budget=${budget.join(',')}, accommodation=${accommodation}, avoid=${avoid.join(',')})...\n`
@@ -528,6 +555,7 @@ async function main(argv) {
   const eligibleTrips = trips.filter(
     (t) =>
       (t.days ?? 0) >= minDays &&
+      (t.ratings && t.ratings.length > 0 ? Math.min(...t.ratings) : 0) >= minRating &&
       (!month || t.departureMonth === month) &&
       (!country || (t.countries || []).some((c) => country.includes(c.toLowerCase())))
   );
@@ -536,6 +564,7 @@ async function main(argv) {
   console.log(`Raw trips collected: ${totalRaw}  |  Unique trips after dedup: ${trips.length}`);
   const filterDescriptions = [];
   if (minDays > 0) filterDescriptions.push(`of at least ${minDays} day(s)`);
+  if (minRating > 0) filterDescriptions.push(`with all legs rated at least ${minRating}★`);
   if (month) filterDescriptions.push(`departing in ${month}`);
   if (country) filterDescriptions.push(`in ${country.join(' or ')}`);
   if (filterDescriptions.length > 0) {
@@ -563,4 +592,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, parseArgs, buildSearchUrl, BUDGET_LABEL_TO_VALUE, ACCOMMODATION_TYPE_TO_VALUE, MONTHS };
+module.exports = { main, parseArgs, buildSearchUrl, BUDGET_LABEL_TO_VALUE, ACCOMMODATION_TYPE_TO_VALUE, MONTHS, extractRatings };

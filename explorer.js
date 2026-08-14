@@ -160,7 +160,7 @@ header.top {
 }
 
 #search { width: 220px; }
-#maxPrice, #minDays { width: 100px; }
+#maxPrice, #minDays, #minRating { width: 100px; }
 
 .field.checkbox { flex-direction: row; align-items: center; gap: 7px; padding-bottom: 7px; }
 
@@ -333,7 +333,7 @@ const CLIENT_JS = `
   };
 
   var state = {
-    search: '', month: '', country: '', minDays: 0, maxPrice: null,
+    search: '', month: '', country: '', minDays: 0, minRating: 0, maxPrice: null,
     breakfastOnly: false, bestsellerOnly: false,
     sortKey: 'price', sortDir: 'asc'
   };
@@ -343,6 +343,7 @@ const CLIENT_JS = `
     month: document.getElementById('month'),
     country: document.getElementById('country'),
     minDays: document.getElementById('minDays'),
+    minRating: document.getElementById('minRating'),
     maxPrice: document.getElementById('maxPrice'),
     breakfastOnly: document.getElementById('breakfastOnly'),
     bestsellerOnly: document.getElementById('bestsellerOnly'),
@@ -431,6 +432,11 @@ const CLIENT_JS = `
       if (state.month && t.departureMonth !== state.month) return false;
       if (state.country && (t.countries || []).indexOf(state.country) === -1) return false;
       if (state.minDays > 0 && (t.days == null ? 0 : t.days) < state.minDays) return false;
+      if (state.minRating > 0) {
+        var ratings = t.ratings || [];
+        var worst = ratings.length ? Math.min.apply(Math, ratings) : 0;
+        if (worst < state.minRating) return false;
+      }
       if (state.maxPrice != null && (t.price == null ? Infinity : t.price) > state.maxPrice) return false;
       if (state.breakfastOnly && !t.breakfastIncluded) return false;
       if (state.bestsellerOnly && !t.bestseller) return false;
@@ -515,6 +521,11 @@ const CLIENT_JS = `
     state.minDays = isNaN(n) || n < 0 ? 0 : n;
     render();
   });
+  els.minRating.addEventListener('input', function () {
+    var n = parseInt(els.minRating.value, 10);
+    state.minRating = isNaN(n) || n < 0 ? 0 : (n > 5 ? 5 : n);
+    render();
+  });
   els.maxPrice.addEventListener('input', function () {
     var n = parseInt(els.maxPrice.value, 10);
     state.maxPrice = isNaN(n) || n < 0 ? null : n;
@@ -524,9 +535,9 @@ const CLIENT_JS = `
   els.bestsellerOnly.addEventListener('change', function () { state.bestsellerOnly = els.bestsellerOnly.checked; render(); });
 
   els.reset.addEventListener('click', function () {
-    state.search = ''; state.month = ''; state.country = ''; state.minDays = 0; state.maxPrice = null;
+    state.search = ''; state.month = ''; state.country = ''; state.minDays = 0; state.minRating = 0; state.maxPrice = null;
     state.breakfastOnly = false; state.bestsellerOnly = false;
-    els.search.value = ''; els.month.value = ''; els.country.value = ''; els.minDays.value = ''; els.maxPrice.value = '';
+    els.search.value = ''; els.month.value = ''; els.country.value = ''; els.minDays.value = ''; els.minRating.value = ''; els.maxPrice.value = '';
     els.breakfastOnly.checked = false; els.bestsellerOnly.checked = false;
     render();
   });
@@ -590,6 +601,10 @@ function buildExplorerHtml(trips) {
       <div class="field">
         <label for="minDays">Min days</label>
         <input type="number" id="minDays" min="0" step="1" inputmode="numeric" placeholder="0" />
+      </div>
+      <div class="field">
+        <label for="minRating">Min rating (★)</label>
+        <input type="number" id="minRating" min="0" max="5" step="1" inputmode="numeric" placeholder="0" />
       </div>
       <div class="field">
         <label for="maxPrice">Max price (&euro;)</label>
