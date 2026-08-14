@@ -274,7 +274,17 @@ async function extractTrips(page) {
 
       const titleLine = lines.find((l) => /^\d+\s+days?\s*-\s*.+/i.test(l)) || null;
       const titleIdx = titleLine ? lines.indexOf(titleLine) : -1;
-      const destinationLine = titleIdx >= 0 ? lines[titleIdx + 1] || null : null;
+      // Some properties render their star rating as a row of dots (●) instead
+      // of stars (★) -- same 1-5 scale, just a different glyph. Normalize so
+      // ratings are comparable/readable regardless of which glyph tryp.com used.
+      // Multi-city itineraries separate legs with a bare "»" (no spacing), e.g.
+      // "Beijing ★★★»Xi'an ★★★" -- add spacing and use a clearer arrow.
+      const rawDestinationLine = titleIdx >= 0 ? lines[titleIdx + 1] || null : null;
+      const destinationLine = rawDestinationLine
+        ? rawDestinationLine
+          .split('●').join('★')
+          .split('»').map((leg) => leg.trim()).join(' → ')
+        : null;
 
       const prices = [...text.matchAll(/[€$£]\s?[\d.,]+/g)].map((m) => m[0]);
       const dateRangeMatch = text.match(/[A-Za-z]{3}, \d{1,2} [A-Za-z]{3} - [A-Za-z]{3}, \d{1,2} [A-Za-z]{3}/);
