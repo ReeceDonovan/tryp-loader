@@ -230,11 +230,13 @@ async function extractTrips(page) {
       const destinationLine = titleIdx >= 0 ? lines[titleIdx + 1] || null : null;
 
       const prices = [...text.matchAll(/[€$£]\s?[\d.,]+/g)].map((m) => m[0]);
+      const dateRangeMatch = text.match(/[A-Za-z]{3}, \d{1,2} [A-Za-z]{3} - [A-Za-z]{3}, \d{1,2} [A-Za-z]{3}/);
       const link = el.closest('a');
 
       return {
         title: titleLine,
         destination: destinationLine,
+        dates: dateRangeMatch ? dateRangeMatch[0] : null,
         priceText: prices[0] || null,
         originalPriceText: prices[1] || null,
         breakfastIncluded: /breakfast included/i.test(text),
@@ -385,6 +387,7 @@ function formatTripLines(trips) {
     discount: t.originalPrice ? `(was €${t.originalPrice})` : '',
     title: t.title || '',
     destination: t.destination || '',
+    dates: t.dates || '',
     run: `[run ${t.sourceRun}]`,
     url: t.url || '',
   }));
@@ -395,12 +398,13 @@ function formatTripLines(trips) {
     discount: widthOf('discount'),
     title: widthOf('title'),
     destination: widthOf('destination'),
+    dates: widthOf('dates'),
     run: widthOf('run'),
   };
 
   return rows.map(
     (r) =>
-      `${r.priceBase.padEnd(widths.priceBase)}  ${r.discount.padEnd(widths.discount)}  |  ${r.title.padEnd(widths.title)}  |  ${r.destination.padEnd(widths.destination)}  |  ${r.run.padEnd(widths.run)}  |  ${r.url}`
+      `${r.priceBase.padEnd(widths.priceBase)}  ${r.discount.padEnd(widths.discount)}  |  ${r.title.padEnd(widths.title)}  |  ${r.destination.padEnd(widths.destination)}  |  ${r.dates.padEnd(widths.dates)}  |  ${r.run.padEnd(widths.run)}  |  ${r.url}`
   );
 }
 
