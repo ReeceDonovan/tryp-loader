@@ -6,6 +6,12 @@ const {
   MONTHS,
 } = require('./load-and-sort.js');
 
+// tryp.com's own location search box calls this endpoint. The key/headers below are
+// shipped in tryp.com's public client-side JS (visible to any site visitor) -- not a
+// private credential of ours, just their public frontend API key.
+const LOCATION_SEARCH_URL = 'https://rduu3i7qp8.execute-api.eu-central-1.amazonaws.com/prod/typeahead/v1/search';
+const LOCATION_SEARCH_API_KEY = 'xeVlvwPT5C7Z7oq3zEYOJ4yOr9QJpLvC1ofD9d0K';
+
 function intValidator({ min }) {
   return (value) => {
     const n = Number(value);
@@ -13,6 +19,93 @@ function intValidator({ min }) {
       return `Must be a whole number >= ${min}.`;
     }
   };
+}
+
+const LOCATION_CODE_RE = /^[a-zA-Z]{5}$/;
+
+function manualLocationPrompt(p) {
+  return p.text({
+    message: 'Departure location code (e.g. IEORK, IEDUB, DEBER, DEFRA)',
+    placeholder: 'IEORK',
+    initialValue: 'IEORK',
+    validate: (value) => {
+      if (!LOCATION_CODE_RE.test(value)) {
+        return 'Expected a 5-letter code, e.g. IEORK or DEBER.';
+      }
+    },
+  });
+}
+
+async function searchDepartureCities(query) {
+  const params = new URLSearchParams({
+    initial_location: 'IEORK',
+    page: '0',
+    pageSize: '20',
+    all: 'false',
+    query,
+  });
+  const res = await fetch(`${LOCATION_SEARCH_URL}?${params.toString()}`, {
+    headers: {
+      accept: '*/*',
+      'content-type': 'application/json',
+      origin: 'https://www.tryp.com',
+      referer: 'https://www.tryp.com/',
+      'x-api-key': LOCATION_SEARCH_API_KEY,
+    },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) {
+    throw new Error(`tryp.com location search failed (HTTP ${res.status})`);
+  }
+  const results = await res.json();
+  return results.filter((r) => r.isCity && r.locode);
+}
+
+function formatCityLabel(match) {
+  const parts = [match.value];
+  if (match.state && match.state !== match.value) parts.push(match.state);
+  if (match.country) parts.push(match.country);
+  return parts.join(', ');
+}
+
+async function pickDepartureLocation(p) {
+  while (true) {
+    const query = await p.text({
+      message: 'Search for your departure city (e.g. Cork, Dublin, Berlin)',
+      placeholder: 'Cork',
+    });
+    if (p.isCancel(query)) return query;
+
+    const trimmed = query.trim();
+    if (LOCATION_CODE_RE.test(trimmed)) {
+      return trimmed.toUpperCase();
+    }
+
+    let matches;
+    try {
+      matches = await searchDepartureCities(trimmed);
+    } catch (err) {
+      p.log.warn(`Could not reach tryp.com's location search (${err.message}). Falling back to manual code entry.`);
+      return manualLocationPrompt(p);
+    }
+
+    if (matches.length === 0) {
+      p.log.warn(`No matches for "${trimmed}" — try a different search.`);
+      continue;
+    }
+
+    const SEARCH_AGAIN = '__search_again__';
+    const choice = await p.select({
+      message: 'Select your departure city',
+      options: [
+        { value: SEARCH_AGAIN, label: '↩ Search again' },
+        ...matches.map((m) => ({ value: m.locode, label: formatCityLabel(m) })),
+      ],
+    });
+    if (p.isCancel(choice)) return choice;
+    if (choice === SEARCH_AGAIN) continue;
+    return choice;
+  }
 }
 
 async function run() {
@@ -30,17 +123,7 @@ async function run() {
 
   const answers = await p.group(
     {
-      location: () =>
-        p.text({
-          message: 'Departure location code (e.g. IEORK, IEDUB, DEBER, DEFRA)',
-          placeholder: 'IEORK',
-          initialValue: 'IEORK',
-          validate: (value) => {
-            if (!/^[a-zA-Z]{5}$/.test(value)) {
-              return 'Expected a 5-letter code, e.g. IEORK or DEBER.';
-            }
-          },
-        }),
+      location: () => pickDepartureLocation(p),
       adults: () =>
         p.text({ message: 'Number of adults', initialValue: '1', validate: intValidator({ min: 1 }) }),
       children: () =>
