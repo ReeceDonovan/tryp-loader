@@ -1,0 +1,4 @@
+node_modules/
+results.json
+results_backup.json
+.DS_Store
