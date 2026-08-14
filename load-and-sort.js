@@ -20,9 +20,30 @@ const ACCOMMODATION_TYPE_TO_VALUE = {
   apartment: 'Apartments', // API value is plural despite the UI label being singular
 };
 
+const MONTHS = [
+  { abbr: 'Jan', name: 'January' },
+  { abbr: 'Feb', name: 'February' },
+  { abbr: 'Mar', name: 'March' },
+  { abbr: 'Apr', name: 'April' },
+  { abbr: 'May', name: 'May' },
+  { abbr: 'Jun', name: 'June' },
+  { abbr: 'Jul', name: 'July' },
+  { abbr: 'Aug', name: 'August' },
+  { abbr: 'Sep', name: 'September' },
+  { abbr: 'Oct', name: 'October' },
+  { abbr: 'Nov', name: 'November' },
+  { abbr: 'Dec', name: 'December' },
+];
+
+const MONTH_NAME_TO_ABBR = { sept: 'Sep' };
+for (const { abbr, name } of MONTHS) {
+  MONTH_NAME_TO_ABBR[abbr.toLowerCase()] = abbr;
+  MONTH_NAME_TO_ABBR[name.toLowerCase()] = abbr;
+}
+
 const KNOWN_OPTION_KEYS = new Set([
   'runs', 'concurrency', 'location', 'adults', 'children', 'infants',
-  'budget', 'accommodation', 'avoid', 'top', 'minDays',
+  'budget', 'accommodation', 'avoid', 'top', 'minDays', 'month',
 ]);
 
 function printHelp() {
@@ -60,6 +81,11 @@ Options:
                         towards --top. Shorter trips are skipped over (but
                         still included in results.json).
                         (default: 0, no minimum)
+  --month=NAME          Only count trips departing in this month towards
+                        --top, e.g. September or Sep. Case-insensitive.
+                        Shorter/other-month trips are skipped over (but
+                        still included in results.json).
+                        (default: no filter)
   --no-save             Don't write the full results to results.json —
                         only print the top trips to the console.
   --help, -h            Show this help message and exit.
@@ -69,6 +95,7 @@ Examples:
   node load-and-sort.js --runs=10 --concurrency=5
   node load-and-sort.js --location=DEBER --adults=2
   node load-and-sort.js --top=10 --min-days=5
+  node load-and-sort.js --month=september --top=10
   node load-and-sort.js --accommodation=apartment --budget=budget,luxury --children=2 --avoid=GB-ENG,US
 `);
 }
@@ -86,6 +113,7 @@ function parseArgs(argv) {
     budget: ['comfort'],
     accommodation: 'hotel',
     avoid: ['GB-ENG'],
+    month: null,
     save: true,
   };
   for (const arg of argv) {
@@ -123,6 +151,9 @@ function parseArgs(argv) {
         break;
       case 'avoid':
         opts.avoid = value.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean);
+        break;
+      case 'month':
+        opts.month = value.trim().toLowerCase();
         break;
     }
   }
@@ -166,6 +197,13 @@ function parseArgs(argv) {
   }
   if (opts.avoid.length === 0) {
     throw new Error(`Invalid --avoid "${opts.avoid.join(',')}" — expected a comma-separated list of location codes, e.g. GB-ENG,US.`);
+  }
+  if (opts.month !== null) {
+    const normalized = MONTH_NAME_TO_ABBR[opts.month];
+    if (!normalized) {
+      throw new Error(`Invalid --month "${opts.month}" — expected a month name or abbreviation, e.g. September or Sep.`);
+    }
+    opts.month = normalized;
   }
 
   return opts;
@@ -366,6 +404,9 @@ function aggregateAndDedup(outcomes, searchUrl) {
       const daysMatch = t.title ? t.title.match(/^(\d+)/) : null;
       const days = daysMatch ? parseInt(daysMatch[1], 10) : null;
 
+      const monthMatch = t.dates ? t.dates.match(/^[A-Za-z]{3}, \d{1,2} ([A-Za-z]{3})/) : null;
+      const departureMonth = monthMatch ? monthMatch[1] : null;
+
       trips.push({
         ...t,
         price,
@@ -373,6 +414,7 @@ function aggregateAndDedup(outcomes, searchUrl) {
         url: t.href ? new URL(t.href, searchUrl).toString() : null,
         sourceRun: outcome.runIndex,
         days,
+        departureMonth,
       });
     }
   }
@@ -414,7 +456,7 @@ async function main(argv) {
     return;
   }
 
-  const { runs, concurrency, location, adults, children, infants, top, minDays, budget, accommodation, avoid, save } = parseArgs(argv);
+  const { runs, concurrency, location, adults, children, infants, top, minDays, budget, accommodation, avoid, month, save } = parseArgs(argv);
   const searchUrl = buildSearchUrl({ location, adults, children, infants, budget, accommodation, avoid });
   console.log(
     `Running ${runs} search${runs === 1 ? '' : 'es'} (concurrency ${concurrency}, location=${location}, adults=${adults}, children=${children}, infants=${infants}, budget=${budget.join(',')}, accommodation=${accommodation}, avoid=${avoid.join(',')})...\n`
@@ -438,12 +480,17 @@ async function main(argv) {
     fs.writeFileSync('results.json', JSON.stringify(trips, null, 2));
   }
 
-  const eligibleTrips = trips.filter((t) => (t.days ?? 0) >= minDays);
+  const eligibleTrips = trips.filter(
+    (t) => (t.days ?? 0) >= minDays && (!month || t.departureMonth === month)
+  );
 
   console.log(`\nRuns: ${outcomes.length} (${succeeded} succeeded, ${failed} failed)`);
   console.log(`Raw trips collected: ${totalRaw}  |  Unique trips after dedup: ${trips.length}`);
-  if (minDays > 0) {
-    console.log(`Trips of at least ${minDays} day(s): ${eligibleTrips.length} of ${trips.length}`);
+  const filterDescriptions = [];
+  if (minDays > 0) filterDescriptions.push(`of at least ${minDays} day(s)`);
+  if (month) filterDescriptions.push(`departing in ${month}`);
+  if (filterDescriptions.length > 0) {
+    console.log(`Trips ${filterDescriptions.join(' and ')}: ${eligibleTrips.length} of ${trips.length}`);
   }
   console.log(`\nTop ${Math.min(top, eligibleTrips.length)} cheapest trips:\n`);
 
@@ -465,4 +512,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, parseArgs, buildSearchUrl, BUDGET_LABEL_TO_VALUE, ACCOMMODATION_TYPE_TO_VALUE };
+module.exports = { main, parseArgs, buildSearchUrl, BUDGET_LABEL_TO_VALUE, ACCOMMODATION_TYPE_TO_VALUE, MONTHS };

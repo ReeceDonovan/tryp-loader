@@ -3,6 +3,7 @@ const {
   main,
   BUDGET_LABEL_TO_VALUE,
   ACCOMMODATION_TYPE_TO_VALUE,
+  MONTHS,
 } = require('./load-and-sort.js');
 
 function intValidator({ min }) {
@@ -76,6 +77,15 @@ async function run() {
         p.text({ message: 'Number of cheapest trips to print', initialValue: '50', validate: intValidator({ min: 1 }) }),
       minDays: () =>
         p.text({ message: 'Minimum trip length in days (0 = no minimum)', initialValue: '0', validate: intValidator({ min: 0 }) }),
+      month: () =>
+        p.select({
+          message: 'Only show trips departing in a specific month?',
+          options: [
+            { value: '', label: 'No filter' },
+            ...MONTHS.map((m) => ({ value: m.abbr.toLowerCase(), label: m.name })),
+          ],
+          initialValue: '',
+        }),
       save: () =>
         p.confirm({ message: 'Save full results to results.json?', initialValue: true }),
     },
@@ -102,6 +112,9 @@ async function run() {
     `--top=${answers.top}`,
     `--min-days=${answers.minDays}`,
   ];
+  if (answers.month) {
+    argv.push(`--month=${answers.month}`);
+  }
   if (!answers.save) {
     argv.push('--no-save');
   }
