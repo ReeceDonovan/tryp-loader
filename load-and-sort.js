@@ -353,7 +353,10 @@ async function runSearch(browser, runIndex, searchUrl) {
   const log = (msg) => console.log(`[run ${runIndex}] ${msg}`);
 
   // Stagger session start so concurrent runs don't all hit the search API in the same instant.
-  await sleep(randomInt(200, 1500));
+  // newContext()/newPage() below are purely local (no network to tryp.com), so let them run
+  // while the stagger elapses in the background, and only gate the actual network request
+  // (page.goto) on it.
+  const staggerDone = sleep(randomInt(200, 1500));
 
   const context = await browser.newContext({
     userAgent: USER_AGENT,
@@ -362,34 +365,41 @@ async function runSearch(browser, runIndex, searchUrl) {
 
   try {
     const page = await context.newPage();
+    await staggerDone;
 
     log('Navigating to search results...');
     await page.goto(searchUrl, { waitUntil: 'load' });
 
-    try {
-      await page.getByRole('button', { name: 'Accept' }).click({ timeout: 5000 });
-      log('Accepted cookie banner.');
-    } catch {
-      // no cookie banner shown
-    }
+    // Don't serially block on the cookie-banner click (which retries internally for up to 5s
+    // when no banner ever appears) before starting to poll for skeletons -- the two don't
+    // touch each other. Run them concurrently, but make sure the banner attempt has fully
+    // settled before the interactive "load more" loop begins.
+    const cookieBannerDone = page.getByRole('button', { name: 'Accept' }).click({ timeout: 5000 })
+      .then(() => log('Accepted cookie banner.'))
+      .catch(() => {
+        // no cookie banner shown
+      });
 
     log('Waiting for initial results to finish generating...');
     await waitForSkeletonsGone(page);
-    log(`Initial trips loaded: ${await page.locator('article').count()}`);
+    await cookieBannerDone;
+
+    const initialCount = await page.locator('article').count();
+    log(`Initial trips loaded: ${initialCount}`);
 
     let stableRounds = 0;
-    let lastCount = await page.locator('article').count();
+    let lastCount = initialCount;
 
     for (let i = 1; i <= MAX_LOAD_MORE_CLICKS; i++) {
       await dismissModalIfPresent(page);
 
       const loadMoreBtn = page.locator('#load-more-packages-button');
-      if (!(await loadMoreBtn.count()) || !(await loadMoreBtn.isVisible())) {
+      if (!(await loadMoreBtn.isVisible())) {
         log('No more "load more" button — all results loaded.');
         break;
       }
 
-      await loadMoreBtn.click().catch(async () => {
+      await loadMoreBtn.click({ timeout: 5000 }).catch(async () => {
         await dismissModalIfPresent(page);
         await loadMoreBtn.click({ timeout: 5000 }).catch(() => { });
       });
